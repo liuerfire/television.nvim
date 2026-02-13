@@ -7,10 +7,24 @@ M.config = {
     height = 0.8,
     border = "rounded",
   },
+  mappings = {
+    t = {
+      ["<C-[>"] = "<C-\\><C-n>:q<CR>",
+      ["<Esc>"] = "<C-\\><C-n>:q<CR>",
+    },
+  },
 }
 
 function M.setup(opts)
   M.config = vim.tbl_deep_extend("force", M.config, opts or {})
+end
+
+local function apply_mappings(buf)
+  if M.config.mappings and M.config.mappings.t then
+    for lhs, rhs in pairs(M.config.mappings.t) do
+      vim.keymap.set("t", lhs, rhs, { buffer = buf, silent = true })
+    end
+  end
 end
 
 local function create_float()
@@ -58,6 +72,7 @@ function M.run(opts)
   local cmd = { vim.o.shell, "-c", full_cmd }
 
   local buf, win = create_float()
+  apply_mappings(buf)
 
   vim.fn.termopen(cmd, {
     on_exit = function(_, exit_code)
