@@ -57,7 +57,7 @@ function M.run(opts)
   end
 
   if not is_tv_executable then
-    vim.api.nvim_err_writeln("television: command '" .. M.config.tv_command .. "' not found. Please install it: https://github.com/alexpasmantier/television")
+    vim.notify("television: command '" .. M.config.tv_command .. "' not found. Please install it: https://github.com/alexpasmantier/television", vim.log.levels.ERROR)
     return
   end
 
@@ -84,7 +84,7 @@ function M.run(opts)
   vim.fn.termopen(cmd, {
     on_exit = function(_, exit_code)
       if exit_code ~= 0 and exit_code ~= 130 then
-        vim.api.nvim_err_writeln(string.format("television: command '%s' failed with exit code %d", full_cmd, exit_code))
+        vim.notify(string.format("television: command '%s' failed with exit code %d", full_cmd, exit_code), vim.log.levels.ERROR)
         return
       end
 
