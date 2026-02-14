@@ -137,6 +137,10 @@ function M.default_handler(selection, key, channel)
             local file = parts[1]
             local line = parts[2]
             local col = parts[3]
+            -- Prepend ./ to filenames starting with + to prevent arbitrary command execution
+            if file:sub(1, 1) == "+" then
+                file = "./" .. file
+            end
             vim.cmd(cmd .. " " .. vim.fn.fnameescape(file))
             vim.api.nvim_win_set_cursor(0, {tonumber(line), tonumber(col or 0)})
             return
@@ -146,6 +150,10 @@ function M.default_handler(selection, key, channel)
     -- Default: just open the file
     -- Check if selection is a file
     if vim.fn.filereadable(selection) == 1 or vim.fn.isdirectory(selection) == 1 then
+        -- Prepend ./ to filenames starting with + to prevent arbitrary command execution
+        if selection:sub(1, 1) == "+" then
+            selection = "./" .. selection
+        end
         vim.cmd(cmd .. " " .. vim.fn.fnameescape(selection))
     else
         -- If it's not a file, maybe it's just a string (like in 'env' channel)
