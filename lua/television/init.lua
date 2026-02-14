@@ -91,63 +91,74 @@ function M.run(opts)
 
   opts = opts or {}
   local channel = opts.channel or ""
-  local temp_file = vim.fn.tempname()
+  -- Trim channel name
+  channel = channel:match("^%s*(.-)%s*$") or channel
   
-  -- We use --expect to handle different open actions
+  -- We use a marker to reliably find the result in the terminal buffer
+  local marker = "___TV_RESULT___:"
   local expect = "ctrl-v;ctrl-x;ctrl-t"
   
-  local full_cmd = string.format("%s %s --expect=%s > %s",
+  local full_cmd = string.format("%s %s --expect=%s --source-output=%s",
     M.config.tv_command,
     channel ~= "" and vim.fn.shellescape(channel) or "",
     vim.fn.shellescape(expect),
-    vim.fn.shellescape(temp_file))
-    
-  -- vim.api.nvim_echo({{ "Running: " .. full_cmd, "None" }}, false, {})
+    vim.fn.shellescape(marker .. "{}"))
     
   local cmd = { vim.o.shell, "-c", full_cmd }
 
+  local original_win = vim.api.nvim_get_current_win()
   local buf, win = create_float()
   apply_mappings(buf)
 
   vim.fn.termopen(cmd, {
     on_exit = function(_, exit_code)
-      if exit_code ~= 0 and exit_code ~= 130 then
-        vim.api.nvim_err_writeln(string.format("television: command '%s' failed with exit code %d", full_cmd, exit_code))
-        return
-      end
+      vim.schedule(function()
+        local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 
-      if vim.api.nvim_win_is_valid(win) then
-        vim.api.nvim_win_close(win, true)
-      end
-      
-      if exit_code == 0 or exit_code == 130 then -- 130 is usually SIGINT/Esc
-        local file = io.open(temp_file, "r")
-        if file then
-          local lines = {}
-          for line in file:lines() do
-            table.insert(lines, line)
-          end
-          file:close()
-          os.remove(temp_file)
-
-          if #lines > 0 then
-            local key = "enter"
-            local selection = lines[1]
-            if #lines > 1 then
-                key = lines[1]
-                selection = lines[2]
-            end
-            
-            if selection and selection ~= "" then
-                if opts.callback then
-                    opts.callback(selection, key)
-                else
-                    M.default_handler(selection, key, channel)
-                end
-            end
-          end
+        if vim.api.nvim_win_is_valid(win) then
+          vim.api.nvim_win_close(win, true)
         end
-      end
+        
+        -- Restore original window focus before handling selection
+        if vim.api.nvim_win_is_valid(original_win) then
+            vim.api.nvim_set_current_win(original_win)
+        end
+        
+        -- Process output from buffer
+        local selection = nil
+        local key = "enter"
+        
+        -- Search from bottom to find the marker
+        for i = #lines, 1, -1 do
+            local line = lines[i]
+            -- Use a more flexible match to find the marker
+            local match = line:match(marker .. "(.*)")
+            if match then
+                -- Trim trailing whitespace from selection
+                selection = match:gsub("%s+$", "")
+                
+                -- The line above might be the key from --expect
+                if i > 1 then
+                    -- Clean up the potential key line as well
+                    local prev_line = lines[i-1]:match("^%s*(.-)%s*$")
+                    if prev_line == "ctrl-v" or prev_line == "ctrl-x" or prev_line == "ctrl-t" then
+                        key = prev_line
+                    end
+                end
+                break
+            end
+        end
+
+        if selection and selection ~= "" then
+            if opts.callback then
+                opts.callback(selection, key)
+            else
+                M.default_handler(selection, key, channel)
+            end
+        elseif exit_code ~= 0 and exit_code ~= 130 then
+            vim.api.nvim_err_writeln(string.format("television: command '%s' failed with exit code %d", full_cmd, exit_code))
+        end
+      end)
     end,
   })
 
@@ -164,28 +175,34 @@ function M.default_handler(selection, key, channel)
         cmd = "tabedit"
     end
 
+    -- Trim channel for comparison
+    local clean_channel = channel and channel:match("^%s*(.-)%s*$") or ""
+
     -- Basic parsing for common channels
     -- text channel usually outputs file:line:col:text or similar
-    if channel == "text" then
-        local file, line, col = string.match(selection, "^(.+):(%d+):(%d+):?.*$")
+    if clean_channel == "text" then
+        -- Try to match path:line:col
+        local file, line, col = string.match(selection, "^(.-):(%d+):(%d+)")
         if not file then
-             -- Try file:line pattern
-             file, line = string.match(selection, "^(.+):(%d+):?.*$")
+             -- Try path:line
+             file, line = string.match(selection, "^(.-):(%d+)")
         end
 
         if file and line then
-            -- Prepend ./ to filenames starting with + to prevent arbitrary command execution
-            if file:sub(1, 1) == "+" then
-                file = "./" .. file
-            end
-            vim.cmd(cmd .. " " .. vim.fn.fnameescape(file))
+            -- Verify the file exists before trying to open it as a text match
+            if vim.fn.filereadable(file) == 1 or vim.fn.isdirectory(file) == 1 then
+                if file:sub(1, 1) == "+" then
+                    file = "./" .. file
+                end
+                vim.cmd(cmd .. " " .. vim.fn.fnameescape(file))
 
-            local l = tonumber(line)
-            local c = tonumber(col or 0)
-            if l then
-                pcall(vim.api.nvim_win_set_cursor, 0, {l, c or 0})
+                local l = tonumber(line)
+                local c = tonumber(col or 0)
+                if l then
+                    pcall(vim.api.nvim_win_set_cursor, 0, {l, c or 0})
+                end
+                return
             end
-            return
         end
     end
 
@@ -199,7 +216,11 @@ function M.default_handler(selection, key, channel)
         vim.cmd(cmd .. " " .. vim.fn.fnameescape(selection))
     else
         -- If it's not a file, maybe it's just a string (like in 'env' channel)
-        print("Selected: " .. selection)
+        if clean_channel == "text" or clean_channel == "files" then
+            vim.api.nvim_err_writeln("television: could not find file: " .. selection)
+        else
+            print("Selected: " .. selection)
+        end
     end
 end
 
