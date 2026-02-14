@@ -16,10 +16,12 @@ M.config = {
 }
 
 local is_tv_executable = nil
+M.channels_cache = nil
 
 function M.setup(opts)
   M.config = vim.tbl_deep_extend("force", M.config, opts or {})
   is_tv_executable = nil
+  M.channels_cache = nil
 end
 
 local function apply_mappings(buf)
@@ -49,6 +51,32 @@ local function create_float()
   })
 
   return buf, win
+end
+
+function M.list_channels()
+  if M.channels_cache then return M.channels_cache end
+
+  -- Check if executable
+  if vim.fn.executable(M.config.tv_command) ~= 1 then
+    return { "files", "text", "git-repos", "env" }
+  end
+
+  local handle = io.popen(M.config.tv_command .. " list-channels")
+  local channels = {}
+  if handle then
+    for line in handle:lines() do
+      table.insert(channels, line)
+    end
+    handle:close()
+  end
+
+  if #channels == 0 then
+    -- Fallback default channels
+    channels = { "files", "text", "git-repos", "env" }
+  end
+
+  M.channels_cache = channels
+  return channels
 end
 
 function M.run(opts)
@@ -139,17 +167,24 @@ function M.default_handler(selection, key, channel)
     -- Basic parsing for common channels
     -- text channel usually outputs file:line:col:text or similar
     if channel == "text" then
-        local parts = vim.split(selection, ":")
-        if #parts >= 2 then
-            local file = parts[1]
-            local line = parts[2]
-            local col = parts[3]
+        local file, line, col = string.match(selection, "^(.+):(%d+):(%d+):?.*$")
+        if not file then
+             -- Try file:line pattern
+             file, line = string.match(selection, "^(.+):(%d+):?.*$")
+        end
+
+        if file and line then
             -- Prepend ./ to filenames starting with + to prevent arbitrary command execution
             if file:sub(1, 1) == "+" then
                 file = "./" .. file
             end
             vim.cmd(cmd .. " " .. vim.fn.fnameescape(file))
-            vim.api.nvim_win_set_cursor(0, {tonumber(line), tonumber(col or 0)})
+
+            local l = tonumber(line)
+            local c = tonumber(col or 0)
+            if l then
+                pcall(vim.api.nvim_win_set_cursor, 0, {l, c or 0})
+            end
             return
         end
     end
