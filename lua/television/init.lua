@@ -15,8 +15,11 @@ M.config = {
   },
 }
 
+local is_tv_executable = nil
+
 function M.setup(opts)
   M.config = vim.tbl_deep_extend("force", M.config, opts or {})
+  is_tv_executable = nil
 end
 
 local function apply_mappings(buf)
@@ -49,7 +52,11 @@ local function create_float()
 end
 
 function M.run(opts)
-  if vim.fn.executable(M.config.tv_command) == 0 then
+  if is_tv_executable == nil then
+    is_tv_executable = vim.fn.executable(M.config.tv_command) == 1
+  end
+
+  if not is_tv_executable then
     vim.api.nvim_err_writeln("television: command '" .. M.config.tv_command .. "' not found. Please install it: https://github.com/alexpasmantier/television")
     return
   end
@@ -149,6 +156,10 @@ function M.default_handler(selection, key, channel)
     -- Default: just open the file
     -- Check if selection is a file
     if vim.fn.filereadable(selection) == 1 or vim.fn.isdirectory(selection) == 1 then
+        -- Prepend ./ to filenames starting with + to prevent arbitrary command execution
+        if selection:sub(1, 1) == "+" then
+            selection = "./" .. selection
+        end
         vim.cmd(cmd .. " " .. vim.fn.fnameescape(selection))
     else
         -- If it's not a file, maybe it's just a string (like in 'env' channel)
