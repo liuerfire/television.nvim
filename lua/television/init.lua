@@ -135,11 +135,14 @@ function M.default_handler(selection, key, channel)
         local parts = vim.split(selection, ":")
         if #parts >= 2 then
             local file = parts[1]
-            local line = parts[2]
-            local col = parts[3]
-            vim.cmd(cmd .. " " .. vim.fn.fnameescape(file))
-            vim.api.nvim_win_set_cursor(0, {tonumber(line), tonumber(col or 0)})
-            return
+            local line = tonumber(parts[2])
+            local col = tonumber(parts[3]) or 0
+
+            if line then
+                vim.cmd(cmd .. " " .. vim.fn.fnameescape(file))
+                vim.api.nvim_win_set_cursor(0, {line, col})
+                return
+            end
         end
     end
 
