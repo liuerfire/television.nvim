@@ -146,6 +146,10 @@ function M.default_handler(selection, key, channel)
             local col = tonumber(parts[3] or 0) or 0
 
             if line then
+                -- Prepend ./ to filenames starting with + to prevent arbitrary command execution
+                if file:sub(1, 1) == "+" then
+                    file = "./" .. file
+                end
                 vim.cmd(cmd .. " " .. vim.fn.fnameescape(file))
                 pcall(vim.api.nvim_win_set_cursor, 0, {line, col})
                 return
