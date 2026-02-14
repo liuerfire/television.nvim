@@ -15,8 +15,38 @@ M.config = {
   },
 }
 
+local cached_channels = nil
+
 function M.setup(opts)
   M.config = vim.tbl_deep_extend("force", M.config, opts or {})
+  cached_channels = nil
+end
+
+function M.list_channels()
+  if cached_channels then
+    return cached_channels
+  end
+
+  local handle = io.popen(M.config.tv_command .. " list-channels")
+  local channels = {}
+  if handle then
+    for line in handle:lines() do
+      table.insert(channels, line)
+    end
+    handle:close()
+  end
+
+  if #channels == 0 then
+    channels = {
+      "files",
+      "text",
+      "git-repos",
+      "env",
+    }
+  end
+
+  cached_channels = channels
+  return channels
 end
 
 local function apply_mappings(buf)
