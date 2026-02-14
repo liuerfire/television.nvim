@@ -1,20 +1,5 @@
 local function television_complete(arg_lead, cmd_line, cursor_pos)
-  local handle = io.popen("tv list-channels")
-  local channels = {}
-  if handle then
-    for line in handle:lines() do
-      table.insert(channels, line)
-    end
-    handle:close()
-  end
-  if #channels == 0 then
-    channels = {
-      "files",
-      "text",
-      "git-repos",
-      "env",
-    }
-  end
+  local channels = require("television").list_channels()
   return vim.tbl_filter(function(item)
     return item:find(arg_lead, 1, true) ~= nil
   end, channels)
